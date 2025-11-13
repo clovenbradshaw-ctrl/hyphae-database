@@ -48,7 +48,7 @@ To create a production build:
 npm run build
 ```
 
-The built files will be in the `dist/` directory. You can serve these with any static file server.
+The build output is written to the `docs/` directory (ignored by git) so you can publish it with GitHub Pages or any static file server by running `npm run build` and copying the generated files from `docs/`.
 
 ## Usage
 
@@ -103,9 +103,10 @@ The built files will be in the `dist/` directory. You can serve these with any s
 ### Architecture
 
 ```
+docs/               # Production build artifacts (generated on demand)
 src/
-  ├── index.html    # Main HTML template
-  ├── index.js      # Application logic with E2EE
+  └── index.js      # Application logic with E2EE
+index.html          # Main HTML template copied into the build
 webpack.config.js   # Webpack configuration
 package.json        # Dependencies and scripts
 ```
