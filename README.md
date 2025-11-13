@@ -48,7 +48,7 @@ To create a production build:
 npm run build
 ```
 
-The build output is written to the `docs/` directory (ignored by git) so you can publish it with GitHub Pages or any static file server by running `npm run build` and copying the generated files from `docs/`.
+The build output is written to the `docs/` directory with relative URLs, making it directly suitable for GitHub Pages or any static file server. Configure your deployment (for example, with GitHub Actions or a dedicated `gh-pages` branch) to run `npm run build` and publish the generated `docs/` folder.
 
 ## Usage
 
