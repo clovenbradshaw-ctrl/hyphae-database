@@ -3,6 +3,8 @@ import * as sdk from 'matrix-js-sdk';
 let client = null;
 let currentRoom = null;
 
+const DEVICE_ID_STORAGE_KEY = 'hyphae_device_id';
+
 // Elements
 const loginForm = document.getElementById('loginForm');
 const clientArea = document.getElementById('clientArea');
@@ -75,15 +77,22 @@ clearDataBtn.addEventListener('click', async () => {
     if (!confirm('This will clear all stored encryption keys. You will need to verify this device again. Continue?')) {
         return;
     }
-    
+
     clearDataBtn.disabled = true;
     showStatus('Clearing encryption data...', 'info');
-    
+
     try {
-        // Clear all Matrix-related IndexedDB databases
-        const databases = ['matrix-js-sdk:crypto', 'matrix-js-sdk', 'matrix-sdk-crypto'];
-        
-        for (const dbName of databases) {
+        const knownDatabases = new Set(['matrix-js-sdk:crypto', 'matrix-js-sdk', 'matrix-sdk-crypto']);
+        const discovered = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : [];
+
+        for (const db of discovered) {
+            if (!db.name) continue;
+            if (db.name.startsWith('matrix-crypto-')) {
+                knownDatabases.add(db.name);
+            }
+        }
+
+        for (const dbName of knownDatabases) {
             await new Promise((resolve) => {
                 const request = indexedDB.deleteDatabase(dbName);
                 request.onsuccess = () => resolve();
@@ -91,7 +100,9 @@ clearDataBtn.addEventListener('click', async () => {
                 request.onblocked = () => resolve();
             });
         }
-        
+
+        localStorage.removeItem(DEVICE_ID_STORAGE_KEY);
+
         showStatus('Encryption data cleared! You can now login fresh.', 'success');
     } catch (error) {
         console.error('Error clearing data:', error);
@@ -124,51 +135,45 @@ loginBtn.addEventListener('click', async () => {
         const tempClient = sdk.createClient({
             baseUrl: "https://hyphae.social"
         });
-        
+
         // Login
         showStatus('Authenticating...', 'info');
-        const response = await tempClient.login("m.login.password", {
+
+        const storedDeviceId = localStorage.getItem(DEVICE_ID_STORAGE_KEY) || undefined;
+        const loginParams = {
             user: username,
-            password: password
-        });
-        
-        showStatus('Initializing end-to-end encryption...', 'info');
-        
-        // First, aggressively clear ALL Matrix-related databases
-        showStatus('Clearing old encryption data...', 'info');
-        const allDatabases = await indexedDB.databases();
-        for (const db of allDatabases) {
-            if (db.name.includes('matrix') || db.name.includes('crypto')) {
-                console.log('Deleting database:', db.name);
-                await new Promise((resolve) => {
-                    const req = indexedDB.deleteDatabase(db.name);
-                    req.onsuccess = () => resolve();
-                    req.onerror = () => resolve();
-                    req.onblocked = () => resolve();
-                    setTimeout(resolve, 1000); // Timeout
-                });
-            }
+            password: password,
+        };
+
+        if (storedDeviceId) {
+            loginParams.device_id = storedDeviceId;
         }
-        
-        // Small delay to ensure cleanup
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
+
+        const response = await tempClient.login("m.login.password", loginParams);
+
+        const deviceId = response.device_id || storedDeviceId;
+        if (deviceId) {
+            localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+        }
+
+        showStatus('Initializing end-to-end encryption...', 'info');
+
         showStatus('Setting up fresh encryption...', 'info');
-        
+
         // Create the actual client with credentials
         client = sdk.createClient({
             baseUrl: "https://hyphae.social",
             accessToken: response.access_token,
             userId: response.user_id,
-            deviceId: response.device_id
+            deviceId: deviceId
         });
         
         // Initialize Rust crypto with unique database prefix per user+device
         // This prevents conflicts when switching between users/devices
         const userHash = response.user_id.replace(/[^a-zA-Z0-9]/g, '_');
-        const deviceHash = response.device_id.substring(0, 8);
+        const deviceHash = (deviceId || '').substring(0, 8);
         const uniquePrefix = `matrix-crypto-${userHash}-${deviceHash}`;
-        
+
         console.log('Using crypto database prefix:', uniquePrefix);
         
         await client.initRustCrypto({
@@ -203,15 +208,15 @@ loginBtn.addEventListener('click', async () => {
 
         showStatus('Starting sync...', 'info');
         
-        // Start syncing
-        await client.startClient({ initialSyncLimit: 10 });
-        
         // Wait for sync to be ready
         client.once('sync', (state) => {
             if (state === 'PREPARED') {
-                showUI(response.user_id, response.device_id);
+                showUI(response.user_id, deviceId);
             }
         });
+
+        // Start syncing
+        await client.startClient({ initialSyncLimit: 10 });
         
         // Listen for new messages
         client.on('Room.timeline', (event, room, toStartOfTimeline) => {
@@ -236,9 +241,10 @@ function showUI(userId, deviceId) {
     loginForm.classList.add('hidden');
     clientArea.classList.remove('hidden');
     userDisplay.textContent = userId;
-    deviceDisplay.textContent = `Device: ${deviceId} (Click to verify)`;
+    const displayDeviceId = deviceId || 'Unknown';
+    deviceDisplay.textContent = `Device: ${displayDeviceId} (Click to verify)`;
     loadRooms();
-    
+
     // Don't auto-show verification modal
     // User can click their ID to verify later
 }
