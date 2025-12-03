@@ -6,7 +6,7 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, 'docs'),
     filename: 'bundle.js',
-    publicPath: './',
+    publicPath: '/',
     clean: true,
   },
   devServer: {
@@ -16,6 +16,9 @@ module.exports = {
     },
     port: 3000,
     hot: true,
+    devMiddleware: {
+      publicPath: '/',
+    },
   },
   plugins: [
     new CopyWebpackPlugin({
