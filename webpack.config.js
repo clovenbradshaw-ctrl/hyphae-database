@@ -11,7 +11,7 @@ module.exports = {
   },
   devServer: {
     static: {
-      directory: path.resolve(__dirname, 'dist'),
+      directory: __dirname,
       watch: true,
     },
     port: 3000,
